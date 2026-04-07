@@ -31,12 +31,10 @@ jobs:
 
       - name: Deploy to AWS
         run: |
-          # Nombre de tu función (podes cambiarlo si querés)
+          
           FUNCTION_NAME="mi-primera-lambda" 
           
-          # IMPORTANTE: Este es el rol que la Lambda usará para ejecutar.
-          # Si todavía no creaste uno específico, podes usar el mismo de GitHub 
-          # para probar, aunque lo ideal es que tenga su propio 'Execution Role'.
+         
           ROLE_ARN="arn:aws:iam::288761765191:role/GitHub"
 
           if aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1; then
