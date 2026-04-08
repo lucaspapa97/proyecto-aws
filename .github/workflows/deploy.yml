@@ -1,4 +1,4 @@
-name: Deploy AWS Lambda
+name: Deploy AWS Lambdas
 
 on:
   push:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Permite comparar con el commit anterior
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -23,31 +25,41 @@ jobs:
           role-to-assume: arn:aws:iam::288761765191:role/GitHub
           aws-region: us-east-1
 
-      - name: Zip Lambda function
+      - name: Deploy Changed Lambdas
         run: |
-          cd lambda
-          zip -r ../function.zip .
-          cd ..
+          # 1. Identificar qué subcarpetas dentro de 'lambda/' cambiaron
+          CHANGED_DIRS=$(git diff --name-only HEAD^ HEAD | grep '^lambda/' | cut -d/ -f2 | uniq)
 
-      - name: Deploy to AWS
-        run: |
-          
-          FUNCTION_NAME="mi-primera-lambda" 
-          
-         
-          ROLE_ARN="arn:aws:iam::288761765191:role/GitHub"
+          for DIR in $CHANGED_DIRS; do
+            # Validar que sea un directorio (evita errores si cambias el README.md)
+            if [ -d "lambda/$DIR" ]; then
+              echo "--- Procesando Lambda: $DIR ---"
+              
+              FUNCTION_NAME="$DIR"
+              ROLE_ARN="arn:aws:iam::288761765191:role/GitHub"
 
-          if aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1; then
-            echo "Actualizando código de la función existente..."
-            aws lambda update-function-code \
-              --function-name $FUNCTION_NAME \
-              --zip-file fileb://function.zip
-          else
-            echo "Creando función nueva en AWS..."
-            aws lambda create-function \
-              --function-name $FUNCTION_NAME \
-              --runtime python3.12 \
-              --role $ROLE_ARN \
-              --handler lambda_function.lambda_handler \
-              --zip-file fileb://function.zip
-          fi
+              # 2. Empaquetar solo el contenido de la carpeta específica
+              cd lambda/$DIR
+              zip -r ../../$DIR.zip .
+              cd ../..
+
+              # 3. Desplegar (Crear o Actualizar)
+              if aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1; then
+                echo "Actualizando código de $FUNCTION_NAME..."
+                aws lambda update-function-code \
+                  --function-name $FUNCTION_NAME \
+                  --zip-file fileb://$DIR.zip
+              else
+                echo "Creando nueva función: $FUNCTION_NAME..."
+                aws lambda create-function \
+                  --function-name $FUNCTION_NAME \
+                  --runtime python3.12 \
+                  --role $ROLE_ARN \
+                  --handler lambda_function.lambda_handler \
+                  --zip-file fileb://$DIR.zip
+              fi
+
+              # Limpieza del zip local
+              rm $DIR.zip
+            fi
+          done
