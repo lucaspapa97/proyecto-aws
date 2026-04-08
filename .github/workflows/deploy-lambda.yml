@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2 # Permite comparar con el commit anterior
+          fetch-depth: 2
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -25,32 +25,43 @@ jobs:
           role-to-assume: arn:aws:iam::288761765191:role/GitHub
           aws-region: us-east-1
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Deploy Changed Lambdas
         run: |
-          # 1. Identificar qué subcarpetas dentro de 'lambda/' cambiaron
+          # 1. Identificar carpetas modificadas
           CHANGED_DIRS=$(git diff --name-only HEAD^ HEAD | grep '^lambda/' | cut -d/ -f2 | uniq)
 
           for DIR in $CHANGED_DIRS; do
-            # Validar que sea un directorio (evita errores si cambias el README.md)
             if [ -d "lambda/$DIR" ]; then
-              echo "--- Procesando Lambda: $DIR ---"
+              echo "--- Procesando: $DIR ---"
               
               FUNCTION_NAME="$DIR"
               ROLE_ARN="arn:aws:iam::288761765191:role/GitHub"
 
-              # 2. Empaquetar solo el contenido de la carpeta específica
               cd lambda/$DIR
+
+              # 2. Instalar dependencias si existe requirements.txt
+              if [ -f "requirements.txt" ]; then
+                echo "Instalando dependencias en la carpeta local..."
+                pip install -r requirements.txt -t .
+              fi
+
+              # 3. Crear el paquete ZIP
               zip -r ../../$DIR.zip .
               cd ../..
 
-              # 3. Desplegar (Crear o Actualizar)
+              # 4. Desplegar en AWS
               if aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1; then
-                echo "Actualizando código de $FUNCTION_NAME..."
+                echo "Actualizando $FUNCTION_NAME..."
                 aws lambda update-function-code \
                   --function-name $FUNCTION_NAME \
                   --zip-file fileb://$DIR.zip
               else
-                echo "Creando nueva función: $FUNCTION_NAME..."
+                echo "Creando $FUNCTION_NAME..."
                 aws lambda create-function \
                   --function-name $FUNCTION_NAME \
                   --runtime python3.12 \
@@ -59,7 +70,7 @@ jobs:
                   --zip-file fileb://$DIR.zip
               fi
 
-              # Limpieza del zip local
+              # Limpieza
               rm $DIR.zip
             fi
           done
